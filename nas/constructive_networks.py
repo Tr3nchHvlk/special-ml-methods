@@ -1,13 +1,13 @@
 import torch
 import numpy as np
 
-class CCAN(torch.nn.Module):
+class ConstructiveNet(torch.nn.Module):
     """
-    Constructive Cascade ANN
+    A constructive ANN
     """
 
     def __init__(self, hidden_size, input_dim, output_dim):
-        super(CCAN, self).__init__()
+        super(ConstructiveNet, self).__init__()
         self.hidden_size = hidden_size
         self.scale = 0
         self.inter_i = []
@@ -86,13 +86,13 @@ class CCAN(torch.nn.Module):
         
         return y
     
-class SCCN(torch.nn.Module):
+class ConstructiveNetStacked(torch.nn.Module):
     """
-    Stacked Constructive Cascade ANN
+    A constructive ANN with stacked hidden neurons
     """
 
     def __init__(self, hidden_size, input_dim, output_dim):
-        super(SCCN, self).__init__()
+        super(ConstructiveNetStacked, self).__init__()
         self.hidden_size = hidden_size
         self.scale = 0
         self.inter_i = []
@@ -147,3 +147,49 @@ class SCCN(torch.nn.Module):
         y = torch.nn.functional.softmax(y, dim=1)
 
         return y
+    
+class Constructive_LSTM_CL(torch.nn.Module):
+    """
+    A constructive LSTM classifier model
+    """
+
+    def __init__(self, hidden_size, n_classes):
+        super(Constructive_LSTM_CL, self).__init__()
+        self.levels = 1
+        self.lstm_ins = []
+        self.lstm_out = torch.nn.LSTM(1, hidden_size)
+        self.hidden_size = hidden_size
+        # self.n_classes = n_classes
+        self.fo = torch.nn.Softmax(dim=1) \
+            if hidden_size == n_classes \
+            else torch.nn.Sequential(
+                torch.nn.Linear(hidden_size, n_classes),
+                torch.nn.Softmax(dim=1)
+            )
+        # freeze former weights on default
+
+    # def parameters(self):
+    #     return [
+    #         param 
+    #             for param in super(Constructive_LSTM_CL, self).parameters() 
+    #             if not param.requires_grad
+    #     ]
+
+    def forward(self, x):
+        y = None
+        if (self.levels == 1):
+            y, _ = self.lstm_out(x)
+            # return self.fo(y[-1, :, :])
+        else:
+            with torch.no_grad():
+                y, _ = self.lstm_ins[0](x)
+                for i in range(1, self.levels-1):
+                    y, _ = self.lstm_ins[i](torch.cat((y,x), dim=2))
+            y, _ = self.lstm_out(torch.cat((y,x), dim=2))
+
+        return self.fo(y[-1, :, :])
+
+    def upfactor(self):
+        self.lstm_ins.append(self.lstm_out)
+        self.lstm_out = torch.nn.LSTM(self.hidden_size + 1, self.hidden_size)
+        self.levels += 1
